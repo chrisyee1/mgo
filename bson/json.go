@@ -3,12 +3,14 @@ package bson
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/globalsign/mgo/internal/json"
+	"../internal/json"
 )
 
 // UnmarshalJSON unmarshals a JSON value that may hold non-standard
@@ -154,7 +156,11 @@ func jencBinaryType(v interface{}) ([]byte, error) {
 	in := v.(Binary)
 	out := make([]byte, base64.StdEncoding.EncodedLen(len(in.Data)))
 	base64.StdEncoding.Encode(out, in.Data)
-	return fbytes(`{"$binary":"%s","$type":"0x%x"}`, out, in.Kind), nil
+	s, err := binaryToCSUUID(in.Data)
+	if err != nil {
+		return nil, err
+	}
+	return fbytes(`"%s"`, s), nil
 }
 
 const jdateFormat = "2006-01-02T15:04:05.999Z07:00"
@@ -183,27 +189,19 @@ func jdecDate(data []byte) (interface{}, error) {
 	}
 
 	var vn struct {
-		Date struct {
-			N int64 `json:"$numberLong,string"`
-		} `json:"$date"`
-		Func struct {
-			S int64
-		} `json:"$dateFunc"`
+		Date int64 `json:"$date"`
 	}
 	err := jdec(data, &vn)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse date: %q", data)
 	}
-	n := vn.Date.N
-	if n == 0 {
-		n = vn.Func.S
-	}
+	n := vn.Date
 	return time.Unix(n/1000, n%1000*1e6).UTC(), nil
 }
 
 func jencDate(v interface{}) ([]byte, error) {
 	t := v.(time.Time)
-	return fbytes(`{"$date":%q}`, t.Format(jdateFormat)), nil
+	return fbytes(`%q`, t.Format(jdateFormat)), nil
 }
 
 func jdecTimestamp(data []byte) (interface{}, error) {
@@ -264,7 +262,7 @@ func jdecObjectId(data []byte) (interface{}, error) {
 }
 
 func jencObjectId(v interface{}) ([]byte, error) {
-	return fbytes(`{"$oid":"%s"}`, v.(ObjectId).Hex()), nil
+	return fbytes(`"%s"`, v.(ObjectId).Hex()), nil
 }
 
 func jdecDBRef(data []byte) (interface{}, error) {
@@ -381,4 +379,32 @@ func jdecUndefined(data []byte) (interface{}, error) {
 
 func jencUndefined(v interface{}) ([]byte, error) {
 	return []byte(`{"$undefined":true}`), nil
+}
+
+func binaryToCSUUID(data []byte) (uuid string, err error) {
+	const byteSize = 16
+	if len(data) != byteSize {
+		err = errors.New("uuid: UUID must be exactly 16 bytes long, got " + strconv.Itoa(len(data)) + " bytes")
+		return
+	}
+	var u [byteSize]byte
+	copy(u[:], data)
+
+	buf := make([]byte, 36)
+
+	hex.Encode(buf[0:2], u[3:4])
+	hex.Encode(buf[2:4], u[2:3])
+	hex.Encode(buf[4:6], u[1:2])
+	hex.Encode(buf[6:8], u[0:1])
+	buf[8] = '-'
+	hex.Encode(buf[9:11], u[5:6])
+	hex.Encode(buf[11:13], u[4:5])
+	buf[13] = '-'
+	hex.Encode(buf[14:16], u[7:8])
+	hex.Encode(buf[16:18], u[6:7])
+	buf[18] = '-'
+	hex.Encode(buf[19:23], u[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:], u[10:])
+	return string(buf), nil
 }
