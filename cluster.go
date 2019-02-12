@@ -36,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/globalsign/mgo/bson"
+	"github.com/chrisyee1/mgo/bson"
 )
 
 // ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResul
 		var meta = bson.M{
 			"driver": bson.M{
 				"name":    "mgo",
-				"version": "globalsign",
+				"version": "chrisyee1",
 			},
 			"os": bson.M{
 				"type":         runtime.GOOS,
