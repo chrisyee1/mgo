@@ -18,7 +18,31 @@ import (
 func UnmarshalJSON(data []byte, value interface{}) error {
 	d := json.NewDecoder(bytes.NewBuffer(data))
 	d.Extend(&jsonExt)
+
 	return d.Decode(value)
+}
+
+// UnmarshalJSONNumbers unmarshals a JSON value that may hold non-standard
+// syntax as defined in BSON's extended JSON specification. Converts any integers
+// to the correct type.
+func UnmarshalJSONNumbers(data []byte, value *map[string]interface{}) error {
+	d := json.NewDecoder(bytes.NewBuffer(data))
+	d.UseNumber()
+	d.Extend(&jsonExt)
+
+	var err2 error
+	err := d.Decode(value)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range *value {
+		(*value)[k], err2 = decodeNum(v)
+		if err2 != nil {
+			return err2
+		}
+	}
+	return nil
 }
 
 // MarshalJSON marshals a JSON value that may hold non-standard
@@ -407,4 +431,33 @@ func binaryToCSUUID(data []byte) (uuid string, err error) {
 	buf[23] = '-'
 	hex.Encode(buf[24:], u[10:])
 	return string(buf), nil
+}
+
+func decodeNum(v interface{}) (interface{}, error) {
+	if num, ok := v.(json.Number); ok {
+		if strings.Contains(num.String(), ".") {
+			return num.Float64()
+		} else {
+			return strconv.Atoi(string(num))
+		}
+	} else if arr, ok := v.([]interface{}); ok {
+		var err error
+		for i, val := range arr {
+			v.([]interface{})[i], err = decodeNum(val)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return v, nil
+	} else if obj, ok := v.(map[string]interface{}); ok {
+		var err error
+		for key, val := range obj {
+			v.(map[string]interface{})[key], err = decodeNum(val)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return v, nil
+	}
+	return v, nil
 }
